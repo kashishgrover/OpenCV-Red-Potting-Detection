@@ -1,0 +1,302 @@
+for(;;)
+        {
+            IplImage* iplImg = cvQueryFrame( capture );
+            frame = iplImg;
+
+            if( !frame.empty() )
+            {
+
+                if( iplImg->origin == IPL_ORIGIN_TL )
+                    frame.copyTo( frameCopy );
+                else
+                    flip( frame, frameCopy, 0 );
+                //cout<<"Detection in progress"<<endl;
+
+                cout<<".";
+
+                Mat binImage=frame;
+                Mat frameIm=frame;
+                int startROIx=START_ROI_X,startROIy=START_ROI_Y,widthROI=WIDTHROI,heightROI=HEIGHTROI;
+                Rect roi(startROIx,startROIy,widthROI,heightROI);
+                binImage = binImage(roi).clone();
+                image=frame(roi).clone();
+                Mat disImage=image.clone();
+
+                imshow("Original", binImage);
+                if(focusnotset && cvWaitKey(1)!=ESC)
+                {
+                    continue;
+                }
+                focusnotset=0;
+                binarizeImage(binImage);
+                //imshow("Bin Im",binImage);
+                binImage=255-binImage;
+
+                //imshow("Bin Im",binImage);
+                //preprocess(binImage,binImage);
+                //waitKey(0);
+                Mat componentImage=binImage.clone();
+
+
+
+                detectComponents(binImage,image,componentImage);
+                if(totalframes==0)
+                      prevImage=Mat::zeros(componentImage.rows,componentImage.cols,componentImage.type());
+
+                //cout<<prevImage.size() <<"  "<<prevImage.type()<<" "<<prevImage.channels()<<" "<<endl;
+                //cout<<componentImage.size() <<"  "<<componentImage.type()<<" "<<componentImage.channels()<<" "<<endl;
+                totalframes++;
+
+                if(totalframes > STAB_FRAME_COUNT) //wait for first 30 frames for stabilized image;
+                {
+                    // after 30 frame consolidate all the earlier frame binary images' information
+                    bitwise_or(componentImage,prevImage,prevImage);
+                    componentImage=prevImage;
+                    FillHoles(componentImage);
+
+
+                    vector<vector<Point> > contours,newcontours;
+                    vector<Vec4i> hierarchy;
+
+                    findContours(componentImage, contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE );
+                    vector<vector<Point> > contours_polyTP( contours.size() );
+                    vector<Rect> boundRectTP( contours.size() );
+                    char filename[50];
+                    int idx=0;
+                    int totalComponents=0;
+
+                    for( ; idx >= 0; idx = hierarchy[idx][0] )
+                    {
+                        Scalar color(255,255,0);
+                        double area1 = contourArea(contours[idx]);
+                        approxPolyDP( Mat(contours[idx]), contours_polyTP[idx], 3, true );
+                        boundRectTP[idx] = boundingRect( Mat(contours_polyTP[idx]) );
+                        Point p1= boundRectTP[idx].tl();
+                        Point p2= boundRectTP[idx].br();
+                        double widthval=(double)p1.y-p2.y;
+                        double heightval=(double)p1.x-p2.x;
+                        int rad = widthval / 2;
+
+                         // if(area1<100)
+                         //{
+                         Point center(WIDTHROI/2,HEIGHTROI/2);
+                         double ROIradius=WIDTHROI/2 - ROIBORDER;
+                         if( euclideanDist(p1,center) > ROIradius || area1 < 4) //ignore small components and
+                            continue;                                           // far away components
+                         if(p1.x >ROIBORDER && p1.y>ROIBORDER && p2.x< (WIDTHROI-ROIBORDER) &&p2.y<(HEIGHTROI-ROIBORDER))
+                         {
+
+                            Rect r(p1,p2);
+                            Point q(CROPPAD,CROPPAD);
+                            r-=q;
+                            r+=Size(CROPPAD*2,CROPPAD*2);
+                            totalComponents++;
+                         }
+
+
+                    } // for all contours
+                    cout<<"Total Components ="<<totalComponents<<endl;
+
+                    if(totalframes > MAX_ATTEMPT_FRAMES && totalComponents < TOTALCOMPS)
+                    {
+                                cout<<"Missing label"<<endl;
+                                break;
+                    }
+                    else
+                    {
+                        int idx=0;
+                        int verified =1;
+
+                        for( ; idx >= 0; idx = hierarchy[idx][0] )
+                        {
+                            Scalar color(255,255,0);
+
+                            double area1 = contourArea(contours[idx]);
+                            approxPolyDP( Mat(contours[idx]), contours_polyTP[idx], 3, true );
+                            boundRectTP[idx] = boundingRect( Mat(contours_polyTP[idx]) );
+                            Point p1= boundRectTP[idx].tl();
+                            Point p2= boundRectTP[idx].br();
+                            double widthval=(double)p2.y-p1.y;
+                            double heightval=(double)p2.x-p1.x;
+                            int rad = widthval / 2;
+
+                         // if(area1<100)
+                         //{
+                            Point center(WIDTHROI/2,HEIGHTROI/2);
+                            double ROIradius=WIDTHROI/2 - ROIBORDER;
+                            if( euclideanDist(p1,center) > ROIradius)
+                               continue;
+                            else if(area1 < MINAREA)
+                            {
+                                        Rect r(p1,p2);
+                                        Point q(CROPPAD,CROPPAD);
+                                        r-=q;
+                                        r+=Size(CROPPAD*2,CROPPAD*2);
+                                        int i;
+                                        for(i=1;i<LABELCHECK_ATTEMPTS;i++)
+                                         {
+                                            double v= checkMyLabelImage(image(r));
+                                            if(v/10e6 < DIST_THRESH)
+                                                break;
+                                        }
+                                        if(i==3)
+                                            rectangle( disImage, r, Scalar(0,0,255), 1, 8, 0 );
+                                        else rectangle( disImage, r, Scalar(255,255,255), 1, 8, 0 );
+
+
+                            }
+                            else if(p1.x >ROIBORDER && p1.y>ROIBORDER && p2.x< (WIDTHROI-ROIBORDER) &&p2.y<(HEIGHTROI-ROIBORDER))
+                            {
+
+                                Rect r(p1,p2);
+                                //Point q(2,2);
+                                //Rect r_init=r;
+                                Mat wrtImage=image(r);
+                                //copyMakeBorder(wrtImage,wrtImage,2,2,2,2,BORDER_CONSTANT,0);
+
+                                //r-=q;
+                                //r+=Size(4,4);
+                                //imshow(filename,image(r));
+                                //cout<<widthval<<" "<<heightval<<endl;
+                                //waitKey(0);
+                                rectangle( disImage, r, Scalar(0,255,0), 1, 8, 0 );
+                                //imshow("DISIm",disImage);
+                                //cout<<endl<<heightval<< "  "<<widthval<<endl;
+                                //waitKey(0);
+
+                                if(argc > 1 && strcmp(argv[1],"training")==0)
+                                {
+                                    cout<<"Writing to file"<<endl;
+                                    sprintf(filename,"./TP/im%04d.jpg",idx);
+                                    //Mat wrtImage=image(r_init);
+                                    //copyMakeBorder(wrtImage,wrtImage,2,2,2,2,BORDER_CONSTANT,0);
+                                    resize(wrtImage,wrtImage, Size(sizex, sizey));
+
+                                    imwrite(filename,wrtImage);
+                                    strcpy(filename,"");
+                                    rectangle( disImage, r, color, 1, 8, 0 );
+                                }
+
+
+                                else if(area1 < MINLABELAREA && (widthval/heightval) < 2)
+                                {
+                                    //rectangle( disImage, r, Scalar(0,255,0), 1, 8, 0 );
+                                    //imshow("DISIm",disImage);
+
+                                       /*Incase the area is too small apply */
+                                        Rect r(p1,p2);
+                                        Point q(CROPPAD,CROPPAD);
+                                        r-=q;
+                                        r+=Size(CROPPAD*2,CROPPAD*2);
+                                        int i;
+                                        for(i=1;i<LABELCHECK_ATTEMPTS;i++)
+                                         {
+                                            double v= checkMyLabelImage(image(r));
+                                            if(v/10e6 < DIST_THRESH)
+                                                break;
+                                        }
+                                        if(i==3)
+                                            rectangle( disImage, r, Scalar(0,0,255), 1, 8, 0 );
+                                        else rectangle( disImage, r, Scalar(255,255,255), 1, 8, 0 );
+
+  //                                   rectangle( disImage, r, Scalar(0,0,255), 1, 8, 0 );
+
+                                }
+                                else
+                                {
+                                    Mat testIm=wrtImage.clone(); //image(r).clone();
+                                    //char fname[300];
+                                    cout<<"Calling check Image:"<<endl;
+
+                                    //imshow("SegmentedImage",testIm);
+                                    //resize(testIm,testIm, Size(sizex, sizey));
+                                    //rectangle( disImage, r, Scalar(0,255,0), 1, 8, 0 );
+                                    //imshow("Current Rect",disImage);
+
+                                    //waitKey(0);
+                                    //_______________________________________
+
+                                     double v= checkMyLabelImage(testIm);
+
+                                      //checkImage(testIm,fname);
+
+                                    //imshow(fname,testIm);
+
+                                    //imwrite(fname,testIm);
+
+//                                    double v=0.0;
+                                    cout<<v;
+                                    if( v/10e6 < DIST_THRESH)
+                                    {
+                                        verified*=1;
+                                        rectangle( disImage, r, Scalar(255,255,255), 1, 8, 0 );
+                                    }
+                                    else
+                                    {
+                                        int i;
+                                        Point q(2,2);
+                                         r-=q;
+                                         r+=Size(4,4);
+                                         for(i=1;i<3;i++)
+                                         {
+                                            v= checkMyLabelImage(image(r));
+                                            if(v/10e6 < DIST_THRESH)
+                                                break;
+                                        }
+                                        if(i==3)
+                                            rectangle( disImage, r, Scalar(0,0,255), 1, 8, 0 );
+                                        else rectangle( disImage, r, Scalar(255,255,255), 1, 8, 0 );
+                                    }
+
+                                }
+
+
+                                //cvWaitKey(0);
+                            }
+
+                         } //for contours
+                         imshow("Label selected",disImage);
+                         cvWaitKey(0);
+                         if(verified)
+
+                         {
+                             Mat edgeIm=image.clone();
+                             Mat gray,blur,thresh;
+                             cvtColor(edgeIm, gray, COLOR_BGR2GRAY);
+                             GaussianBlur(gray, blur,Size(3, 3), 2, 2);
+                             adaptiveThreshold(blur, thresh, 255, 1, 1, 5, 2);
+                             thresh.copyTo(edgeIm);
+                             FillHoles(edgeIm);
+                           //  nothImage=nothImage-componentImage;
+
+                             //CannyEdgeImage(edgeIm,edgeIm);
+                             imshow("Canny Edge",edgeIm);
+                             imshow("Component Image",componentImage);
+                             //detectComponents(edgeIm,image,componentImage);
+                             //invert(componentImage,componentImage);
+                             //bitwise_xor(componentImage,edgeIm,edgeIm);
+                             //morphology(edgeIm,edgeIm);
+                             imshow("XOR",edgeIm);
+                             imshow("Components in Canny",componentImage);
+
+                             cout<<"Fine: No errors in elastomer"<<endl;
+
+                             break;
+                         }
+
+
+
+                    }//if all exists
+
+
+                            //}
+
+                    //}
+
+
+                }
+
+                Mat im;
+                (frame(roi).clone()).copyTo(im,componentImage);
+}
+

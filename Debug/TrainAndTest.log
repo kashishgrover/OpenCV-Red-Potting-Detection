@@ -1,0 +1,11 @@
+﻿Build started 2/1/2016 1:57:36 AM.
+     1>Project "c:\Users\Kashish\documents\visual studio 2015\Projects\TrainAndTest\TrainAndTest.vcxproj" on node 2 (Build target(s)).
+     1>ClCompile:
+         C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\bin\CL.exe /c /ZI /nologo /W3 /WX- /sdl /Od /Oy- /D _MBCS /Gm /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"Debug\\" /Fd"Debug\vc140.pdb" /Gd /TP /analyze- /errorReport:prompt TrainAndTest.cpp
+         TrainAndTest.cpp
+     1>c:\users\kashish\documents\visual studio 2015\projects\trainandtest\trainandtest.cpp(3): fatal error C1083: Cannot open include file: 'opencv2/core/core.hpp': No such file or directory
+     1>Done Building Project "c:\Users\Kashish\documents\visual studio 2015\Projects\TrainAndTest\TrainAndTest.vcxproj" (Build target(s)) -- FAILED.
+
+Build FAILED.
+
+Time Elapsed 00:00:02.17
